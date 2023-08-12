@@ -1,5 +1,6 @@
 import importlib
 import inspect
+import functools
 import os
 import re
 import secrets
@@ -10,6 +11,7 @@ from types import FunctionType
 from typing import Any, Optional
 
 import pytest
+from jsonschema.validators import Draft202012Validator
 from _pytest.assertion.rewrite import AssertionRewritingHook
 
 
@@ -78,6 +80,24 @@ def create_module(tmp_path, request):
         return module
 
     return run
+
+
+@pytest.fixture(scope="session", autouse=True)
+def check_json_schema():
+    from pydantic.json_schema import GenerateJsonSchema
+
+
+    def verify_json_schema(func):
+        @functools.wraps(func)
+        def inner(*args, **kwargs):
+            json_schema = func(args, kwargs)
+            print(json_schema)
+            Draft202012Validator.check_schema(json_schema)
+            return json_schema
+
+        return inner
+
+    GenerateJsonSchema.json_schema = verify_json_schema(GenerateJsonSchema.json_schema)
 
 
 @dataclass
