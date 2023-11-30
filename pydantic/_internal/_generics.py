@@ -134,11 +134,11 @@ def create_generic_submodel(
     namespace: dict[str, Any] = {'__module__': origin.__module__}
     bases = (origin,)
     meta, ns, kwds = prepare_class(model_name, bases)
-    namespace.update(ns)
+    ns.update(namespace)
     created_model = meta(
         model_name,
         bases,
-        namespace,
+        ns,
         __pydantic_generic_metadata__={
             'origin': origin,
             'args': args,

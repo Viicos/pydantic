@@ -1474,12 +1474,12 @@ def create_model(  # noqa: C901
     meta, ns, kwds = types.prepare_class(__model_name, resolved_bases, kwds=__cls_kwargs__)
     if resolved_bases is not __base__:
         ns['__orig_bases__'] = __base__
-    namespace.update(ns)
+    ns.update(namespace)
 
     return meta(
         __model_name,
         resolved_bases,
-        namespace,
+        ns,
         __pydantic_reset_parent_namespace__=False,
         _create_model_module=__module__,
         **kwds,

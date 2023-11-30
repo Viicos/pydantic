@@ -42,18 +42,38 @@ else:
 object_setattr = object.__setattr__
 
 
-class _ModelNamespaceDict(dict):
-    """A dictionary subclass that intercepts attribute setting on model classes and
-    warns about overriding of decorators.
+class _ModelNamespaceDict(dict[str, Any]):
+    """A dictionary subclass that acts as a temporary class namespace, and adding
+    a prefix before each key to allow annotations having the same representation as
+    other fields.
+
+    Additionally, warns about overriding of decorators.
     """
 
+    PYDANTIC_MANGLED_PREFIX = '__pydantic_mangled__'
+
     def __setitem__(self, k: str, v: object) -> None:
-        existing: Any = self.get(k, None)
+
+        if k != '__annotations__':
+            k = self.PYDANTIC_MANGLED_PREFIX + k
+
+        existing = self.get(k, None)
         if existing and v is not existing and isinstance(existing, PydanticDescriptorProxy):
-            warnings.warn(f'`{k}` overrides an existing Pydantic `{existing.decorator_info.decorator_repr}` decorator')
+            warnings.warn(f'`{k.replace(self.PYDANTIC_MANGLED_PREFIX, "")}` overrides an existing Pydantic `{existing.decorator_info.decorator_repr}` decorator')
 
         return super().__setitem__(k, v)
 
+    def __getitem__(self, __key: str) -> Any:
+        try:
+            return super().__getitem__(__key)
+        except KeyError:
+            # If an attribute of the class is accessed in the class body (that is while being defined), names are still mangled.
+            # We fallback to the mangled key in this case.
+            return super().__getitem__(self.PYDANTIC_MANGLED_PREFIX + __key)
+
+    def restore_namespace(self) -> dict[str, Any]:
+        """Return a namespace with keys unmangled."""
+        return {k.replace(self.PYDANTIC_MANGLED_PREFIX, ''): v for k, v in self.items()}
 
 @dataclass_transform(kw_only_default=True, field_specifiers=(PydanticModelField,))
 class ModelMetaclass(ABCMeta):
@@ -61,7 +81,7 @@ class ModelMetaclass(ABCMeta):
         mcs,
         cls_name: str,
         bases: tuple[type[Any], ...],
-        namespace: dict[str, Any],
+        namespace: _ModelNamespaceDict,
         __pydantic_generic_metadata__: PydanticGenericMetadata | None = None,
         __pydantic_reset_parent_namespace__: bool = True,
         _create_model_module: str | None = None,
@@ -81,6 +101,8 @@ class ModelMetaclass(ABCMeta):
         Returns:
             The new class created by the metaclass.
         """
+        # First, restore the namespace, removing the temporary prefix:
+        namespace = namespace.restore_namespace()
         # Note `ModelMetaclass` refers to `BaseModel`, but is also used to *create* `BaseModel`, so we rely on the fact
         # that `BaseModel` itself won't have any bases, but any subclass of it will, to determine whether the `__new__`
         # call we're in the middle of is for the `BaseModel` class.
